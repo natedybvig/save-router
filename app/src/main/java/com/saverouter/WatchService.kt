@@ -15,6 +15,10 @@ import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.graphics.PixelFormat
+import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -155,7 +159,8 @@ class WatchService : Service() {
             .setContentTitle("Where should “${f.name}” go?")
             .setContentText("It’s in Downloads now. Pick a place to save it.")
             .setContentIntent(chooserIntent(f, nid))
-            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setOnlyAlertOnce(true)
         store.dests().filter { it.kind != "drive" && it.quick }.take(2).forEachIndexed { k, d ->
             val qi = Intent(this, WatchService::class.java).setAction(ACT_QUICK)
                 .putExtra("path", f.absolutePath).putExtra("dest", d.id).putExtra("nid", nid)
@@ -164,6 +169,37 @@ class WatchService : Service() {
         }
         b.addAction(Notification.Action.Builder(icon, "Choose…", chooserIntent(f, nid)).build())
         nm.notify(nid, b.build())
+        if (store.popup && Settings.canDrawOverlays(this)) openOnScreen(f, nid)
+    }
+
+    /**
+     * Opens the save window directly. Android lets an app with "Display over other apps" start a
+     * window from the background only while it shows an overlay, so we show an invisible
+     * 1-pixel overlay for a moment, open the window, then remove it.
+     */
+    private fun openOnScreen(f: File, nid: Int) {
+        val wm = getSystemService(WindowManager::class.java)
+        val dot = View(this).apply { setBackgroundColor(0x01000000) }
+        val lp = WindowManager.LayoutParams(
+            1, 1,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        )
+        val added = try { wm.addView(dot, lp); true } catch (_: Exception) { false }
+        handler.postDelayed({
+            try {
+                startActivity(
+                    Intent(this, ChooserActivity::class.java)
+                        .setData(android.net.Uri.fromParts("saverouter", nid.toString(), null))
+                        .putExtra(ChooserActivity.EXTRA_PATH, f.absolutePath)
+                        .putExtra(ChooserActivity.EXTRA_NOTIF, nid)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                )
+            } catch (_: Exception) {}
+            handler.postDelayed({ if (added) try { wm.removeView(dot) } catch (_: Exception) {} }, 1500)
+        }, 200)
     }
 
     private fun quickSave(path: String, destId: String, nid: Int) {

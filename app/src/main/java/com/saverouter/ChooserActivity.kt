@@ -94,7 +94,11 @@ class ChooserActivity : Activity() {
         progress = root.put(label("", 15f).apply { setPadding(0, dp(10), 0, dp(10)) })
         val bar = root.put(hstack())
         saveBtn = bar.put(btn("Save") { startSave() }, WRAP, WRAP)
-        bar.put(btn("Cancel") { finish() }, WRAP, WRAP)
+        bar.put(btn("Cancel") {
+            val nid = intent.getIntExtra(EXTRA_NOTIF, 0)
+            if (nid != 0) getSystemService(NotificationManager::class.java).cancel(nid)
+            finish()
+        }, WRAP, WRAP)
         setScreen(root)
     }
 

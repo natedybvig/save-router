@@ -115,6 +115,10 @@ class Store(ctx: Context) {
         get() = p.getBoolean("delete_after", false)
         set(v) { p.edit().putBoolean("delete_after", v).apply() }
 
+    var popup: Boolean
+        get() = p.getBoolean("popup", true)
+        set(v) { p.edit().putBoolean("popup", v).apply() }
+
     var initialized: Boolean
         get() = p.getBoolean("initialized", false)
         set(v) { p.edit().putBoolean("initialized", v).apply() }

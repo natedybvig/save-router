@@ -114,6 +114,14 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
             })
             status.put(permRow("Notifications", notificationsOk()) { askNotifications() })
+            status.put(CheckBox(this).apply {
+                text = "Open the save window on screen right away (instead of only a notification)"
+                isChecked = store.popup
+                setOnCheckedChangeListener { _, c -> store.popup = c; refresh() }
+            })
+            if (store.popup) status.put(permRow("Display over other apps (needed to open the window)", Settings.canDrawOverlays(this)) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            })
         }
         status.put(CheckBox(this).apply {
             text = "Remove the file from Downloads after it’s saved"
