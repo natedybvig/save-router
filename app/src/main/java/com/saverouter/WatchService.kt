@@ -31,6 +31,7 @@ class WatchService : Service() {
         private const val ONGOING_ID = 1
         private const val ACT_QUICK = "com.saverouter.QUICK"
         private const val ACT_STOP = "com.saverouter.STOP"
+        const val ACT_SAMPLE = "com.saverouter.SAMPLE"
 
         fun start(ctx: Context) {
             if (!Environment.isExternalStorageManager()) return
@@ -58,7 +59,9 @@ class WatchService : Service() {
     private var primed = false
     private lateinit var store: Store
     private val nm by lazy { getSystemService(NotificationManager::class.java) }
-    private val popup by lazy { PopupCard(this, store, pool) }
+    private val popup by lazy {
+        PopupCard(this, store, pool).also { p -> p.report = { msg -> store.lastPopup = (store.lastPopup ?: "") + " Then: " + msg } }
+    }
     private fun popupOn() = store.popup && Settings.canDrawOverlays(this)
     private fun whyNoCard(): String? = when {
         !store.popup -> "(Pop-up card is turned off in Save Router.) Click to choose where it goes."
@@ -87,6 +90,12 @@ class WatchService : Service() {
     override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
         goForeground()
         when (i?.action) {
+            ACT_SAMPLE -> {
+                val dir = java.io.File(cacheDir, "sample").apply { mkdirs() }
+                val f = java.io.File(dir, "Sample card (nothing is saved).txt").apply { writeText("sample") }
+                val ok = runCatching { popup.show(f, 0x0fff) }.getOrElse { e -> popup.lastError = e.toString(); false }
+                store.lastPopup = "sample card: " + (if (ok) "shown" else "refused (${popup.lastError})")
+            }
             ACT_STOP -> {
                 store.watch = false
                 popup.closeAll()
@@ -178,7 +187,7 @@ class WatchService : Service() {
         }
 
         // 2. The notification: quiet when the card is up, otherwise loud and (if allowed) full-screen.
-        val b = Notification.Builder(this, if (cardShown) CH_QUIET else CH_NEW)
+        val b = Notification.Builder(this, CH_NEW)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Where should “${f.name}” go?")
             .setContentText(if (cardShown || !store.popup) "It’s in Downloads now. Pick a place to save it."
@@ -186,9 +195,9 @@ class WatchService : Service() {
             .setContentIntent(chooserIntent(f, nid))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOnlyAlertOnce(true)
-        if (!cardShown && store.popup && fullScreenAllowed()) {
+        if (store.popup && fullScreenAllowed()) {
             b.setFullScreenIntent(chooserIntent(f, nid), true)
-            store.lastPopup = (store.lastPopup ?: "") + " Tried the full-screen alert instead."
+            if (!cardShown) store.lastPopup = (store.lastPopup ?: "") + " Used the full-screen alert instead."
         }
         store.dests().filter { it.kind != "drive" && it.quick }.take(2).forEachIndexed { k, d ->
             val qi = Intent(this, WatchService::class.java).setAction(ACT_QUICK)

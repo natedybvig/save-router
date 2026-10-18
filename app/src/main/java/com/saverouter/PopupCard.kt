@@ -27,8 +27,19 @@ import java.util.concurrent.ExecutorService
  * Needs the "Display over other apps" permission.
  */
 class PopupCard(private val svc: Service, private val store: Store, private val pool: ExecutorService) {
-    private val ctx = ContextThemeWrapper(svc, android.R.style.Theme_DeviceDefault_DayNight)
-    private val wm = svc.getSystemService(WindowManager::class.java)
+    // A window context tied to the main screen, the way Android expects overlays to be created.
+    private val winCtx: android.content.Context = run {
+        val dm = svc.getSystemService(android.hardware.display.DisplayManager::class.java)
+        val display = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        runCatching {
+            svc.createDisplayContext(display)
+                .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
+        }.getOrDefault(svc)
+    }
+    private val ctx = ContextThemeWrapper(winCtx, android.R.style.Theme_DeviceDefault_DayNight)
+    private val wm = winCtx.getSystemService(WindowManager::class.java)
+    /** What actually happened on screen, for the main screen's "Last pop-up attempt" line. */
+    var report: (String) -> Unit = {}
     private val nm = svc.getSystemService(NotificationManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     private val queue = ArrayDeque<Pair<File, Int>>()
@@ -148,6 +159,16 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
             shown = wrap
             shownPath = f.path
             lastError = null
+            main.postDelayed({
+                if (shown === wrap) {
+                    val loc = IntArray(2)
+                    runCatching { wrap.getLocationOnScreen(loc) }
+                    val disp = runCatching { wrap.display?.displayId }.getOrNull()
+                    report("card on screen: ${wrap.width}x${wrap.height} at ${loc[0]},${loc[1]}, " +
+                        "attached=${wrap.isAttachedToWindow}, shown=${wrap.isShown}, display=$disp, " +
+                        "screen=${ctx.resources.displayMetrics.widthPixels}x${ctx.resources.displayMetrics.heightPixels}")
+                }
+            }, 800)
             return true
         } catch (e: Exception) {
             lastError = e.javaClass.simpleName + ": " + (e.message ?: "")

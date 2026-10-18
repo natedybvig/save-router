@@ -57,6 +57,13 @@ class MainActivity : Activity() {
         root.put(section("Try it"))
         root.put(btn("Save a test file") { sendTestFile() })
         root.put(btn("Test the download pop-up") { testDownload() })
+        root.put(btn("Show the pop-up card right now") {
+            if (!store.watch) toast("Turn on “Ask where to save each new download” first.")
+            else {
+                startForegroundService(Intent(this, WatchService::class.java).setAction(WatchService.ACT_SAMPLE))
+                status.postDelayed({ refresh() }, 1500)
+            }
+        })
         root.put(label("From any app: choose Share, then “Save to…” (Save Router). In the Files app, right-click a file and choose Share.", 14f, muted = true))
 
         val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
