@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService
  * Needs the "Display over other apps" permission.
  */
 class PopupCard(private val svc: Service, private val store: Store, private val pool: ExecutorService) {
+    companion object { const val SAMPLE_ID = 0x0fff }
     // A window context tied to the main screen, the way Android expects overlays to be created.
     private val winCtx: android.content.Context = run {
         val dm = svc.getSystemService(android.hardware.display.DisplayManager::class.java)
@@ -69,7 +70,8 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
 
     private fun closeAndNext() {
         remove()
-        next()
+        // A short pause so it's clear this card closed before any next one appears.
+        if (queue.isNotEmpty()) main.postDelayed({ if (shown == null) next() }, 700)
     }
 
     private fun next() {
@@ -172,7 +174,15 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
                 isAllCaps = false
                 textSize = 16f
                 setOnClickListener {
-                    if (d.kind == "drive") openChooser(f, nid, d.id) else save(f, nid, d, status, ::enable)
+                    when {
+                        nid == SAMPLE_ID -> {
+                            enable(false)
+                            status.text = "This was a sample card, so nothing was saved. Real downloads save right here."
+                            main.postDelayed({ if (shownPath == f.path) closeAndNext() }, 2000)
+                        }
+                        d.kind == "drive" -> openChooser(f, nid, d.id)
+                        else -> save(f, nid, d, status, ::enable)
+                    }
                 }
             }
             buttons.add(btn); add(btn)
@@ -180,7 +190,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
         val more = Button(ctx, null, android.R.attr.borderlessButtonStyle).apply {
             text = "More options… (several places, rename, other folders)"
             isAllCaps = false
-            setOnClickListener { openChooser(f, nid, null) }
+            setOnClickListener { if (nid == SAMPLE_ID) closeAndNext() else openChooser(f, nid, null) }
         }
         buttons.add(more); add(more)
         add(status)
@@ -231,7 +241,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
                 main.post {
                     status.text = "✓  Saved to ${d.label} as $saved"
                     nm.cancel(nid)
-                    main.postDelayed({ if (shownPath == f.path) closeAndNext() }, 1800)
+                    main.postDelayed({ if (shownPath == f.path) closeAndNext() }, 1000)
                 }
             } catch (e: Exception) {
                 main.post {
@@ -249,7 +259,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
             .putExtra(ChooserActivity.EXTRA_NOTIF, nid)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         if (preselect != null) i.putExtra(ChooserActivity.EXTRA_PRESELECT, preselect)
-        runCatching { svc.startActivity(i) }
         closeAndNext()
+        runCatching { svc.startActivity(i) }
     }
 }

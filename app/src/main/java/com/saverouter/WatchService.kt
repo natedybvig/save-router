@@ -93,7 +93,7 @@ class WatchService : Service() {
             ACT_SAMPLE -> {
                 val dir = java.io.File(cacheDir, "sample").apply { mkdirs() }
                 val f = java.io.File(dir, "Sample card (nothing is saved).txt").apply { writeText("sample") }
-                val ok = runCatching { popup.show(f, 0x0fff) }.getOrElse { e -> popup.lastError = e.toString(); false }
+                val ok = runCatching { popup.show(f, PopupCard.SAMPLE_ID) }.getOrElse { e -> popup.lastError = e.toString(); false }
                 store.lastPopup = "sample card: " + (if (ok) "shown" else "refused (${popup.lastError})")
             }
             ACT_STOP -> {
@@ -186,7 +186,10 @@ class WatchService : Service() {
                 (if (Settings.canDrawOverlays(this)) "allowed" else "not allowed") + "."
         }
 
-        // 2. The notification: quiet when the card is up, otherwise loud and (if allowed) full-screen.
+        // 2. The card is up, so no taskbar alert is needed.
+        if (cardShown) return
+
+        // 3. No card: a notification that stays until handled (full-screen when allowed).
         val b = Notification.Builder(this, CH_NEW)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Where should “${f.name}” go?")
@@ -195,7 +198,7 @@ class WatchService : Service() {
             .setContentIntent(chooserIntent(f, nid))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOnlyAlertOnce(true)
-        if (store.popup && fullScreenAllowed()) {
+        if (fullScreenAllowed()) {
             b.setFullScreenIntent(chooserIntent(f, nid), true)
             if (!cardShown) store.lastPopup = (store.lastPopup ?: "") + " Used the full-screen alert instead."
         }
