@@ -60,6 +60,11 @@ class WatchService : Service() {
     private val nm by lazy { getSystemService(NotificationManager::class.java) }
     private val popup by lazy { PopupCard(this, store, pool) }
     private fun popupOn() = store.popup && Settings.canDrawOverlays(this)
+    private fun whyNoCard(): String? = when {
+        !store.popup -> "(Pop-up card is turned off in Save Router.) Click to choose where it goes."
+        !Settings.canDrawOverlays(this) -> "No pop-up card: “Display over other apps” isn’t allowed yet. Open Save Router to allow it."
+        else -> null
+    }
 
     private val downloads: File get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
@@ -163,7 +168,7 @@ class WatchService : Service() {
         val b = Notification.Builder(this, if (popupOn()) CH_QUIET else CH_NEW)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Where should “${f.name}” go?")
-            .setContentText("It’s in Downloads now. Pick a place to save it.")
+            .setContentText(whyNoCard() ?: "It’s in Downloads now. Pick a place to save it.")
             .setContentIntent(chooserIntent(f, nid))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOnlyAlertOnce(true)
@@ -175,7 +180,12 @@ class WatchService : Service() {
         }
         b.addAction(Notification.Action.Builder(icon, "Choose…", chooserIntent(f, nid)).build())
         nm.notify(nid, b.build())
-        if (popupOn()) popup.show(f, nid)
+        if (popupOn()) {
+            popup.show(f, nid)
+            popup.lastError?.let { err ->
+                nm.notify(nid, b.setChannelId(CH_NEW).setContentText("Couldn’t show the pop-up card ($err). Click here to choose.").build())
+            }
+        }
     }
 
     private fun quickSave(path: String, destId: String, nid: Int) {

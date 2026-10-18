@@ -34,6 +34,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
     private val queue = ArrayDeque<Pair<File, Int>>()
     private var shown: View? = null
     private var shownPath: String? = null
+    var lastError: String? = null
 
     private fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 
@@ -145,7 +146,9 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
             wm.addView(wrap, lp)
             shown = wrap
             shownPath = f.path
-        } catch (_: Exception) {
+            lastError = null
+        } catch (e: Exception) {
+            lastError = e.javaClass.simpleName + ": " + (e.message ?: "")
             // Permission was turned off: the notification is still there as a fallback.
             shown = null
             shownPath = null

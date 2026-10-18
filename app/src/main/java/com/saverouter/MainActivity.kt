@@ -69,6 +69,10 @@ class MainActivity : Activity() {
     private fun testDownload() {
         if (!store.watch) { toast("Turn on “Ask where to save each new download” first."); return }
         if (!Environment.isExternalStorageManager()) { toast("Allow access to your Downloads folder first."); return }
+        if (store.popup && !Settings.canDrawOverlays(this)) {
+            toast("The pop-up card can’t appear yet: “Display over other apps” isn’t allowed. Click Allow next to it.")
+            return
+        }
         val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val f = File(dir, "Save Router test ${System.currentTimeMillis() / 1000}.txt")
         runCatching { f.writeText("A test download from Save Router. You can delete this file.\n") }
