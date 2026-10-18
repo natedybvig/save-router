@@ -56,9 +56,24 @@ class MainActivity : Activity() {
 
         root.put(section("Try it"))
         root.put(btn("Save a test file") { sendTestFile() })
+        root.put(btn("Test the download pop-up") { testDownload() })
         root.put(label("From any app: choose Share, then “Save to…” (Save Router). In the Files app, right-click a file and choose Share.", 14f, muted = true))
 
+        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
+        root.put(label("Version $version", 12f, muted = true).apply { setPadding(0, dp(18), 0, 0) })
+
         setScreen(root)
+    }
+
+    /** Drops a small file into Downloads so the watcher's pop-up can be tried. */
+    private fun testDownload() {
+        if (!store.watch) { toast("Turn on “Ask where to save each new download” first."); return }
+        if (!Environment.isExternalStorageManager()) { toast("Allow access to your Downloads folder first."); return }
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val f = File(dir, "Save Router test ${System.currentTimeMillis() / 1000}.txt")
+        runCatching { f.writeText("A test download from Save Router. You can delete this file.\n") }
+            .onSuccess { toast("Test file added to Downloads. The pop-up should appear in a few seconds.") }
+            .onFailure { toast("Couldn’t write to Downloads: ${it.message}") }
     }
 
     override fun onResume() {
@@ -115,11 +130,11 @@ class MainActivity : Activity() {
             })
             status.put(permRow("Notifications", notificationsOk()) { askNotifications() })
             status.put(CheckBox(this).apply {
-                text = "Open the save window on screen right away (instead of only a notification)"
+                text = "Show a pop-up card in the middle of the screen (stays until you choose)"
                 isChecked = store.popup
                 setOnCheckedChangeListener { _, c -> store.popup = c; refresh() }
             })
-            if (store.popup) status.put(permRow("Display over other apps (needed to open the window)", Settings.canDrawOverlays(this)) {
+            if (store.popup) status.put(permRow("Display over other apps (needed for the pop-up)", Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             })
         }

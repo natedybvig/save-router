@@ -27,6 +27,7 @@ class WatchService : Service() {
     companion object {
         private const val CH_WATCH = "watch"
         private const val CH_NEW = "new"
+        private const val CH_QUIET = "new_quiet"
         private const val ONGOING_ID = 1
         private const val ACT_QUICK = "com.saverouter.QUICK"
         private const val ACT_STOP = "com.saverouter.STOP"
@@ -46,6 +47,7 @@ class WatchService : Service() {
             val nm = ctx.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(NotificationChannel(CH_WATCH, "Watching Downloads", NotificationManager.IMPORTANCE_MIN))
             nm.createNotificationChannel(NotificationChannel(CH_NEW, "New downloads", NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(CH_QUIET, "New downloads (when the on-screen card is used)", NotificationManager.IMPORTANCE_LOW))
         }
     }
 
@@ -56,6 +58,8 @@ class WatchService : Service() {
     private var primed = false
     private lateinit var store: Store
     private val nm by lazy { getSystemService(NotificationManager::class.java) }
+    private val popup by lazy { PopupCard(this, store, pool) }
+    private fun popupOn() = store.popup && Settings.canDrawOverlays(this)
 
     private val downloads: File get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
@@ -80,6 +84,7 @@ class WatchService : Service() {
         when (i?.action) {
             ACT_STOP -> {
                 store.watch = false
+                popup.closeAll()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -99,6 +104,7 @@ class WatchService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        runCatching { popup.closeAll() }
         pool.shutdown()
         super.onDestroy()
     }
@@ -154,7 +160,7 @@ class WatchService : Service() {
     private fun notifyNew(f: File) {
         val nid = idFor(f)
         val icon = Icon.createWithResource(this, R.drawable.ic_stat)
-        val b = Notification.Builder(this, CH_NEW)
+        val b = Notification.Builder(this, if (popupOn()) CH_QUIET else CH_NEW)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Where should “${f.name}” go?")
             .setContentText("It’s in Downloads now. Pick a place to save it.")
@@ -169,37 +175,7 @@ class WatchService : Service() {
         }
         b.addAction(Notification.Action.Builder(icon, "Choose…", chooserIntent(f, nid)).build())
         nm.notify(nid, b.build())
-        if (store.popup && Settings.canDrawOverlays(this)) openOnScreen(f, nid)
-    }
-
-    /**
-     * Opens the save window directly. Android lets an app with "Display over other apps" start a
-     * window from the background only while it shows an overlay, so we show an invisible
-     * 1-pixel overlay for a moment, open the window, then remove it.
-     */
-    private fun openOnScreen(f: File, nid: Int) {
-        val wm = getSystemService(WindowManager::class.java)
-        val dot = View(this).apply { setBackgroundColor(0x01000000) }
-        val lp = WindowManager.LayoutParams(
-            1, 1,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        )
-        val added = try { wm.addView(dot, lp); true } catch (_: Exception) { false }
-        handler.postDelayed({
-            try {
-                startActivity(
-                    Intent(this, ChooserActivity::class.java)
-                        .setData(android.net.Uri.fromParts("saverouter", nid.toString(), null))
-                        .putExtra(ChooserActivity.EXTRA_PATH, f.absolutePath)
-                        .putExtra(ChooserActivity.EXTRA_NOTIF, nid)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                )
-            } catch (_: Exception) {}
-            handler.postDelayed({ if (added) try { wm.removeView(dot) } catch (_: Exception) {} }, 1500)
-        }, 200)
+        if (popupOn()) popup.show(f, nid)
     }
 
     private fun quickSave(path: String, destId: String, nid: Int) {
