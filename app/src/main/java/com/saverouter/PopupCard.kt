@@ -93,9 +93,24 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
     }
 
     private fun build(f: File, nid: Int): Boolean {
+        val pos = svc.getSharedPreferences("saverouter", android.content.Context.MODE_PRIVATE)
+        val width = minOf(dp(460), ctx.resources.displayMetrics.widthPixels - dp(24))
+        val lp = WindowManager.LayoutParams(
+            width, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            title = "Save Router"
+            x = pos.getInt("card_x", 0)
+            y = pos.getInt("card_y", 0)
+        }
+        val wrap = FrameLayout(ctx).apply { setPadding(dp(14), dp(14), dp(14), dp(14)) }
+
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(16))
+            setPadding(dp(22), dp(14), dp(14), dp(16))
             background = GradientDrawable().apply {
                 cornerRadius = dp(18).toFloat()
                 setColor(color(android.R.attr.colorBackground))
@@ -103,23 +118,56 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
             }
             elevation = dp(16).toFloat()
         }
-        fun add(v: View, w: Int = ViewGroup.LayoutParams.MATCH_PARENT) = card.addView(v, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
+        fun add(v: View, w: Int = ViewGroup.LayoutParams.MATCH_PARENT) =
+            card.addView(v, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        // Yellow "curb" stripe, same as the app icon.
-        add(View(ctx).apply {
+        // Drag the top of the card to move it. The spot is remembered for next time.
+        var sx = 0f; var sy = 0f; var ox = 0; var oy = 0
+        val drag = View.OnTouchListener { _, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    lp.x = ox + (e.rawX - sx).toInt()
+                    lp.y = oy + (e.rawY - sy).toInt()
+                    runCatching { wm.updateViewLayout(wrap, lp) }
+                }
+                android.view.MotionEvent.ACTION_UP ->
+                    pos.edit().putInt("card_x", lp.x).putInt("card_y", lp.y).apply()
+            }
+            true
+        }
+
+        // Thin yellow "curb" stripe (fixed height), doubles as a drag handle.
+        val stripe = View(ctx).apply {
             background = GradientDrawable().apply { cornerRadius = dp(3).toFloat(); setColor(0xFFF2C200.toInt()) }
-            minimumHeight = dp(6)
-        })
-        add(text("Where should this go?", 21f, bold = true).apply { setPadding(0, dp(12), 0, dp(2)) })
-        add(text(f.name, 15f).apply { maxLines = 2 })
-        add(text(Saver.human(f.length()) + " · in Downloads now", 13f, muted = true).apply { setPadding(0, 0, 0, dp(10)) })
+            setOnTouchListener(drag)
+        }
+        card.addView(stripe, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)).apply { rightMargin = dp(8) })
+
+        val header = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setOnTouchListener(drag)
+        }
+        header.addView(text("Where should this go?", 21f, bold = true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(Button(ctx, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "✕"
+            textSize = 20f
+            contentDescription = "Close"
+            minWidth = dp(48)
+            setOnClickListener { closeAndNext() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        add(header)
+        add(text(f.name, 15f).apply { maxLines = 2; setPadding(0, 0, dp(8), 0) })
+        add(text(Saver.human(f.length()) + " · in Downloads now · drag the top to move", 13f, muted = true).apply { setPadding(0, 0, dp(8), dp(10)) })
 
         val status = text("", 14f).apply { setPadding(0, dp(6), 0, dp(4)) }
         val buttons = mutableListOf<Button>()
         fun enable(on: Boolean) = buttons.forEach { it.isEnabled = on }
 
         for (d in store.dests()) {
-            val b = Button(ctx).apply {
+            val btn = Button(ctx).apply {
                 text = d.label
                 isAllCaps = false
                 textSize = 16f
@@ -127,7 +175,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
                     if (d.kind == "drive") openChooser(f, nid, d.id) else save(f, nid, d, status, ::enable)
                 }
             }
-            buttons.add(b); add(b)
+            buttons.add(btn); add(btn)
         }
         val more = Button(ctx, null, android.R.attr.borderlessButtonStyle).apply {
             text = "More options… (several places, rename, other folders)"
@@ -145,15 +193,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
         add(keep, ViewGroup.LayoutParams.WRAP_CONTENT)
         if (queue.isNotEmpty()) add(text("${queue.size} more waiting", 12f, muted = true))
 
-        val wrap = FrameLayout(ctx).apply { setPadding(dp(14), dp(14), dp(14), dp(14)) }
-        wrap.addView(card)
-        val width = minOf(dp(460), ctx.resources.displayMetrics.widthPixels - dp(24))
-        val lp = WindowManager.LayoutParams(
-            width, WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.CENTER; title = "Save Router" }
+        wrap.addView(card, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         try {
             wm.addView(wrap, lp)
             shown = wrap
