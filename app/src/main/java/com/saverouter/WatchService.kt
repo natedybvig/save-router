@@ -165,13 +165,31 @@ class WatchService : Service() {
     private fun notifyNew(f: File) {
         val nid = idFor(f)
         val icon = Icon.createWithResource(this, R.drawable.ic_stat)
-        val b = Notification.Builder(this, if (popupOn()) CH_QUIET else CH_NEW)
+        val stamp = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+
+        // 1. Try the on-screen card. We try even if Android says the permission is off,
+        //    because some devices report it wrongly.
+        var cardShown = false
+        if (store.popup) {
+            cardShown = runCatching { popup.show(f, nid) }.getOrElse { e -> popup.lastError = e.toString(); false }
+            store.lastPopup = if (cardShown) "$stamp: card shown for ${f.name}"
+            else "$stamp: card refused (${popup.lastError ?: "unknown"}). Permission reported as " +
+                (if (Settings.canDrawOverlays(this)) "allowed" else "not allowed") + "."
+        }
+
+        // 2. The notification: quiet when the card is up, otherwise loud and (if allowed) full-screen.
+        val b = Notification.Builder(this, if (cardShown) CH_QUIET else CH_NEW)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Where should “${f.name}” go?")
-            .setContentText(whyNoCard() ?: "It’s in Downloads now. Pick a place to save it.")
+            .setContentText(if (cardShown || !store.popup) "It’s in Downloads now. Pick a place to save it."
+                else "The pop-up card was blocked. Click here to choose where it goes.")
             .setContentIntent(chooserIntent(f, nid))
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOnlyAlertOnce(true)
+        if (!cardShown && store.popup && fullScreenAllowed()) {
+            b.setFullScreenIntent(chooserIntent(f, nid), true)
+            store.lastPopup = (store.lastPopup ?: "") + " Tried the full-screen alert instead."
+        }
         store.dests().filter { it.kind != "drive" && it.quick }.take(2).forEachIndexed { k, d ->
             val qi = Intent(this, WatchService::class.java).setAction(ACT_QUICK)
                 .putExtra("path", f.absolutePath).putExtra("dest", d.id).putExtra("nid", nid)
@@ -180,13 +198,10 @@ class WatchService : Service() {
         }
         b.addAction(Notification.Action.Builder(icon, "Choose…", chooserIntent(f, nid)).build())
         nm.notify(nid, b.build())
-        if (popupOn()) {
-            popup.show(f, nid)
-            popup.lastError?.let { err ->
-                nm.notify(nid, b.setChannelId(CH_NEW).setContentText("Couldn’t show the pop-up card ($err). Click here to choose.").build())
-            }
-        }
     }
+
+    private fun fullScreenAllowed(): Boolean =
+        Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
 
     private fun quickSave(path: String, destId: String, nid: Int) {
         val f = File(path)

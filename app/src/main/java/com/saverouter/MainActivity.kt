@@ -138,9 +138,25 @@ class MainActivity : Activity() {
                 isChecked = store.popup
                 setOnCheckedChangeListener { _, c -> store.popup = c; refresh() }
             })
-            if (store.popup) status.put(permRow("Display over other apps (needed for the pop-up)", Settings.canDrawOverlays(this)) {
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            })
+            if (store.popup) {
+                val overlayOk = Settings.canDrawOverlays(this)
+                status.put(permRow("Display over other apps (needed for the pop-up)", overlayOk) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                })
+                if (!overlayOk) {
+                    status.put(label("Switch already on but this still says needed? Googlebook may be treating Save Router as a restricted app. Click the button below, then click ⋮ (top right) and choose “Allow restricted settings”. Then come back and click Allow again.", 13f, muted = true))
+                    status.put(btn("Open Save Router’s app info") {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    })
+                }
+                if (Build.VERSION.SDK_INT >= 34 &&
+                    !getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()) {
+                    status.put(permRow("Full-screen alerts (backup for the pop-up)", false) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")))
+                    })
+                }
+                store.lastPopup?.let { status.put(label("Last pop-up attempt: $it", 12f, muted = true)) }
+            }
         }
         status.put(CheckBox(this).apply {
             text = "Remove the file from Downloads after it’s saved"

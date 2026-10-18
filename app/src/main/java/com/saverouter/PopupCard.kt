@@ -38,10 +38,11 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
 
     private fun dp(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 
-    fun show(f: File, nid: Int) {
-        if (f.path == shownPath || queue.any { it.first.path == f.path }) return
-        queue.addLast(f to nid)
-        if (shown == null) next()
+    /** Returns true if the card is on screen or waiting its turn; false if the system refused it. */
+    fun show(f: File, nid: Int): Boolean {
+        if (f.path == shownPath || queue.any { it.first.path == f.path }) return true
+        if (shown != null) { queue.addLast(f to nid); return true }
+        return build(f, nid)
     }
 
     fun closeAll() {
@@ -80,7 +81,7 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
         if (muted) alpha = 0.75f
     }
 
-    private fun build(f: File, nid: Int) {
+    private fun build(f: File, nid: Int): Boolean {
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(18), dp(22), dp(16))
@@ -147,11 +148,13 @@ class PopupCard(private val svc: Service, private val store: Store, private val 
             shown = wrap
             shownPath = f.path
             lastError = null
+            return true
         } catch (e: Exception) {
             lastError = e.javaClass.simpleName + ": " + (e.message ?: "")
-            // Permission was turned off: the notification is still there as a fallback.
+            // The system refused the overlay; the notification is the fallback.
             shown = null
             shownPath = null
+            return false
         }
     }
 

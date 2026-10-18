@@ -119,6 +119,10 @@ class Store(ctx: Context) {
         get() = p.getBoolean("popup", true)
         set(v) { p.edit().putBoolean("popup", v).apply() }
 
+    var lastPopup: String?
+        get() = p.getString("last_popup", null)
+        set(v) { p.edit().putString("last_popup", v).apply() }
+
     var initialized: Boolean
         get() = p.getBoolean("initialized", false)
         set(v) { p.edit().putBoolean("initialized", v).apply() }
