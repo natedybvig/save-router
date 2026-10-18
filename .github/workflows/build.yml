@@ -33,6 +33,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest SaveRouter.apk \
-            --title "Save Router (latest build)" \
-            --notes "Build ${{ github.run_number }}. Download SaveRouter.apk on your Googlebook and open it to install."
+          gh release create "v1.0.${{ github.run_number }}" SaveRouter.apk \
+            --latest \
+            --title "Save Router 1.0.${{ github.run_number }}" \
+            --notes "Download SaveRouter.apk to install. Obtainium users get this update automatically."
